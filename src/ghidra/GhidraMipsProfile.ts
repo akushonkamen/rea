@@ -1,4 +1,5 @@
 import type { GhidraLanguageOverride } from "../config/ghidraLanguageOverride.js";
+import { MIPS_SECTION_TABLE_TRUNCATION_PREFIX } from "../application/MipsElfMetadata.js";
 import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import type { JsonValue } from "../domain/jsonValue.js";
 
@@ -27,6 +28,18 @@ export const ghidraMipsLanguageOverride = (
         compilerSpecId: "default",
       }
     : undefined;
+
+/**
+ * A carved firmware image keeps its original section header table offset while
+ * the captured file ends before it. The optional section table is the only
+ * table this inspection records as a limitation; the required program header
+ * table must be read whole or the inspection fails outright. Every program
+ * header therefore has been checked and none declares PT_MIPS_ABIFLAGS, so the
+ * unread section headers can only hold declarations that stay unknown — the
+ * same o32-assumption footing as a complete recordless header.
+ */
+const isCarvedSectionTableLimitation = (limitation: string): boolean =>
+  limitation.startsWith(MIPS_SECTION_TABLE_TRUNCATION_PREFIX);
 
 /**
  * Recordless legacy ELF32 MIPS admission: the header declares no ABI field and
@@ -59,9 +72,11 @@ const hasLegacyMipsHeaderShape = (target: BinaryTarget): boolean => {
     (flags & 0x100) === 0 &&
     // Undefined means the record was not inspected; only an inspected
     // absence establishes the recordless legacy admission. An inspection
-    // that could not examine every declaration source stays unknown.
+    // that could not examine every declaration source stays unknown, except
+    // for the carved section table whose limitation names exactly that table.
     abiFlags === null &&
-    (limitations === undefined || limitations.length === 0)
+    (limitations === undefined ||
+      limitations.every(isCarvedSectionTableLimitation))
   );
 };
 
