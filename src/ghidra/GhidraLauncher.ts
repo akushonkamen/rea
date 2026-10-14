@@ -164,6 +164,8 @@ export interface GhidraHeadlessLauncherOptions {
   readonly languageOverride?: GhidraLanguageOverride;
   /** Auto-analyzers disabled before default auto-analysis, as configured. */
   readonly disabledAnalyzers?: readonly string[];
+  /** Auto-analyzers enabled before default auto-analysis, as configured. */
+  readonly enabledAnalyzers?: readonly string[];
   /** Caller seeds committed by the analysis profile, applied before analysis. */
   readonly analysisSeeds?: GhidraSeedCommitment;
   readonly analysisExtensions?: readonly GhidraExtension[];
@@ -284,6 +286,9 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
         ...(this.options.disabledAnalyzers === undefined
           ? {}
           : { disabledAnalyzers: this.options.disabledAnalyzers }),
+        ...(this.options.enabledAnalyzers === undefined
+          ? {}
+          : { enabledAnalyzers: this.options.enabledAnalyzers }),
       });
       const scriptCommand = ghidraHeadlessCommand({
         environment: this.options.environment,
@@ -547,6 +552,8 @@ export interface GhidraHeadlessArgumentOptions {
   readonly languageOverride?: GhidraLanguageOverride;
   /** Auto-analyzers disabled by the pre-analysis options script. */
   readonly disabledAnalyzers?: readonly string[];
+  /** Auto-analyzers enabled by the pre-analysis options script. */
+  readonly enabledAnalyzers?: readonly string[];
   /** Canonical seed snapshot passed to the pre-analysis seed script. */
   readonly seedPath?: string;
 }
@@ -695,7 +702,17 @@ export const ghidraHeadlessArguments = (
       : [
           "-preScript",
           scriptPath.join(bridgeDirectory, "ReaGhidraAnalysisOptions.java"),
+          "disable",
           options.disabledAnalyzers.join(","),
+        ]),
+    ...(options.enabledAnalyzers === undefined ||
+    options.enabledAnalyzers.length === 0
+      ? []
+      : [
+          "-preScript",
+          scriptPath.join(bridgeDirectory, "ReaGhidraAnalysisOptions.java"),
+          "enable",
+          options.enabledAnalyzers.join(","),
         ]),
     ...((options.platform ?? process.platform) === "win32"
       ? []

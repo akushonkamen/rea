@@ -919,6 +919,25 @@ that the analyzer was disabled. For Windows PE resource analysis, the exact name
 is `WindowsResourceReference`. Disabling an analyzer skips the facts it would
 have produced.
 
+To enable a named Ghidra auto-analyzer that default auto-analysis leaves off
+(for example, the `Variadic Function Signature Override` analyzer, which
+recovers printf/scanf-family variadic arguments on Apple arm64):
+
+```bash
+export REA_GHIDRA_ENABLED_ANALYZERS="Variadic Function Signature Override"
+```
+
+The value follows the same comma-separated name rules as the disabled list. A
+pre-script enables each name before auto-analysis, the analysis profile records
+the override in `analyzer_preset` (for example
+`ghidra-default+enabled:Variadic Function Signature Override`, combined with a
+disabled list as `ghidra-default+disabled:…+enabled:…`), and a session fails to
+open when its committed profile and the setting differ. Unknown names or options
+that remain disabled abort the headless import before auto-analysis and the
+bridge, so an unsuccessful override cannot produce a session claiming that the
+analyzer was enabled. Enabling an analyzer adds the facts it produces and its
+analysis cost.
+
 ### Ghidra heap and CPU controls
 
 Set resource controls in the environment that launches the CLI or MCP server,

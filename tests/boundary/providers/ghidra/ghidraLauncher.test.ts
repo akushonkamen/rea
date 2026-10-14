@@ -360,7 +360,8 @@ describe("Ghidra disabled analyzers", () => {
       posix.join("/package/bridge", "ReaGhidraAnalysisOptions.java"),
     );
     expect(arguments_[options - 1]).toBe("-preScript");
-    expect(arguments_[options + 1]).toBe(
+    expect(arguments_[options + 1]).toBe("disable");
+    expect(arguments_[options + 2]).toBe(
       "Objective-C Message Analyzer,Decompiler Switch Analysis",
     );
     const prepare = arguments_.indexOf(
@@ -392,10 +393,63 @@ describe("Ghidra disabled analyzers", () => {
         path.join("/package", "bridge", "ReaGhidraAnalysisOptions.java"),
       );
       expect(arguments_[options - 1]).toBe("-preScript");
-      expect(arguments_[options + 1]).toBe("Objective-C Message Analyzer");
+      expect(arguments_[options + 1]).toBe("disable");
+      expect(arguments_[options + 2]).toBe("Objective-C Message Analyzer");
       expect(options).toBeLessThan(arguments_.indexOf("-postScript"));
     },
   );
+
+  it("passes an enabled list with its own mode argument", () => {
+    const arguments_ = ghidraHeadlessArguments({
+      ...base,
+      enabledAnalyzers: ["Variadic Function Signature Override"],
+    });
+    const options = arguments_.indexOf(
+      posix.join("/package/bridge", "ReaGhidraAnalysisOptions.java"),
+    );
+    expect(arguments_[options - 1]).toBe("-preScript");
+    expect(arguments_[options + 1]).toBe("enable");
+    expect(arguments_[options + 2]).toBe(
+      "Variadic Function Signature Override",
+    );
+    expect(options).toBeLessThan(arguments_.indexOf("-postScript"));
+    expect(arguments_.filter((entry) => entry === "-preScript")).toHaveLength(
+      1,
+    );
+  });
+
+  it("applies the disable list before the enable list", () => {
+    const arguments_ = ghidraHeadlessArguments({
+      ...base,
+      disabledAnalyzers: ["Objective-C Message Analyzer"],
+      enabledAnalyzers: ["Variadic Function Signature Override"],
+    });
+    const first = arguments_.indexOf(
+      posix.join("/package/bridge", "ReaGhidraAnalysisOptions.java"),
+    );
+    const second = arguments_.lastIndexOf(
+      posix.join("/package/bridge", "ReaGhidraAnalysisOptions.java"),
+    );
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(first);
+    expect(arguments_[first + 1]).toBe("disable");
+    expect(arguments_[first + 2]).toBe("Objective-C Message Analyzer");
+    expect(arguments_[second + 1]).toBe("enable");
+    expect(arguments_[second + 2]).toBe("Variadic Function Signature Override");
+    expect(
+      arguments_.filter((entry) =>
+        entry.endsWith("ReaGhidraAnalysisOptions.java"),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("adds no analyzer script for an empty enabled override", () => {
+    expect(
+      ghidraHeadlessArguments({ ...base, enabledAnalyzers: [] }),
+    ).not.toContain(
+      posix.join("/package/bridge", "ReaGhidraAnalysisOptions.java"),
+    );
+  });
 
   it("keeps the invocation byte-identical without an override", () => {
     expect(ghidraHeadlessArguments(base)).toEqual([
