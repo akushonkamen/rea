@@ -15,6 +15,7 @@ export interface AppConfig {
   readonly ghidraStartupTimeoutMs: number;
   readonly ghidraLanguageOverride?: GhidraLanguageOverride;
   readonly ghidraDisabledAnalyzers?: readonly string[];
+  readonly ghidraEnabledAnalyzers?: readonly string[];
   readonly ghidraSeedFile?: string;
   readonly ghidraNativeAotJar?: string;
   readonly ilspyCmdPath: string | undefined;

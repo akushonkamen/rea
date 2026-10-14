@@ -2364,6 +2364,128 @@ describe("Ghidra disabled analyzer options", () => {
   });
 });
 
+describe("Ghidra enabled analyzer options", () => {
+  const configuredProvider = (
+    environment: Record<string, string>,
+    clientFactory?: GhidraProviderClientFactory,
+  ) => {
+    const config = parseConfig({ GHIDRA_INSTALL_DIR: INSTALL, ...environment });
+    if (!config.ok) throw config.error;
+    return new GhidraProvider(
+      config.value,
+      silentLogger,
+      {},
+      installationHost(),
+      clientFactory,
+    );
+  };
+
+  it("records the enabled analyzers in the analysis profile", async () => {
+    const ghidra = configuredProvider({
+      REA_GHIDRA_ENABLED_ANALYZERS: "Variadic Function Signature Override",
+    });
+    const resolved = await ghidra.resolveAnalysisProfile(
+      executableTarget("elf", "x86_64"),
+    );
+    if (!resolved.ok || resolved.value.profile === null)
+      throw new Error("expected a bound Ghidra profile");
+    expect(resolved.value.profile.parameters).toMatchObject({
+      analyzer_preset:
+        "ghidra-default+enabled:Variadic Function Signature Override",
+      analysis_options: {
+        enabled_analyzers: ["Variadic Function Signature Override"],
+      },
+    });
+  });
+
+  it("records enabled and disabled analyzers in one preset", async () => {
+    const ghidra = configuredProvider({
+      REA_GHIDRA_DISABLED_ANALYZERS: "Objective-C Message Analyzer",
+      REA_GHIDRA_ENABLED_ANALYZERS: "Variadic Function Signature Override",
+    });
+    const resolved = await ghidra.resolveAnalysisProfile(
+      executableTarget("elf", "x86_64"),
+    );
+    if (!resolved.ok || resolved.value.profile === null)
+      throw new Error("expected a bound Ghidra profile");
+    expect(resolved.value.profile.parameters).toMatchObject({
+      analyzer_preset:
+        "ghidra-default+disabled:Objective-C Message Analyzer+enabled:Variadic Function Signature Override",
+      analysis_options: {
+        disabled_analyzers: ["Objective-C Message Analyzer"],
+        enabled_analyzers: ["Variadic Function Signature Override"],
+      },
+    });
+  });
+
+  it("hands the enabled analyzers to the launcher for a matching profile", async () => {
+    const launchers: GhidraHeadlessLauncher[] = [];
+    const ghidra = configuredProvider(
+      { REA_GHIDRA_ENABLED_ANALYZERS: "Variadic Function Signature Override" },
+      (options) => {
+        launchers.push(options.launcher as GhidraHeadlessLauncher);
+        return {
+          start: () => Promise.resolve(ok(sessionInfo())),
+          callTool: () => Promise.resolve(ok(null)),
+          close: () => Promise.resolve(ok(null)),
+        };
+      },
+    );
+    const target = executableTarget("elf", "x86_64");
+    const resolved = await ghidra.resolveAnalysisProfile(target);
+    if (!resolved.ok || resolved.value.profile === null)
+      throw new Error("expected a bound Ghidra profile");
+    const client = ghidra.createClient(target, resolved.value.profile);
+    const health = await client.execute("health", {});
+    expect(health.ok).toBe(true);
+    expect(launchers).toHaveLength(1);
+    expect(launchers[0]?.options.enabledAnalyzers).toEqual([
+      "Variadic Function Signature Override",
+    ]);
+  });
+
+  it("refuses a profile resolved without or with other enabled analyzers", async () => {
+    const target = executableTarget("elf", "x86_64");
+    const plainProvider = configuredProvider({});
+    const plain = await plainProvider.resolveAnalysisProfile(target);
+    if (!plain.ok || plain.value.profile === null)
+      throw new Error("expected profile");
+    const withEnabled = configuredProvider({
+      REA_GHIDRA_ENABLED_ANALYZERS: "Variadic Function Signature Override",
+    });
+    const enabled = await withEnabled.resolveAnalysisProfile(target);
+    if (!enabled.ok || enabled.value.profile === null)
+      throw new Error("expected configured profile");
+    for (const [profile, environment] of [
+      [
+        plain.value.profile,
+        {
+          REA_GHIDRA_ENABLED_ANALYZERS: "Variadic Function Signature Override",
+        },
+      ],
+      [enabled.value.profile, {}],
+      [
+        enabled.value.profile,
+        { REA_GHIDRA_ENABLED_ANALYZERS: "Decompiler Switch Analysis" },
+      ],
+    ] as const) {
+      let starts = 0;
+      const client = configuredProvider(environment, () => ({
+        start: () => {
+          starts++;
+          return Promise.resolve(ok(sessionInfo()));
+        },
+        callTool: () => Promise.resolve(ok(null)),
+        close: () => Promise.resolve(ok(null)),
+      })).createClient(target, profile);
+      const failed = await client.execute("health", {});
+      expect(failed.ok).toBe(false);
+      if (!failed.ok) expect(failed.error._tag).toBe("ProviderAdapterError");
+      expect(starts).toBe(0);
+    }
+  });
+});
+
 describe("Ghidra queries after the owned provider is lost", () => {
   const lostProviderSession = async (
     state: "exited" | "unreachable" | "idle",

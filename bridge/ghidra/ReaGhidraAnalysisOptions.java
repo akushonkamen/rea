@@ -3,16 +3,21 @@ import java.util.Map;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.util.headless.HeadlessScript;
 
-/** Disable the named auto-analyzers before default auto-analysis. */
+/** Apply one named auto-analyzer override before default auto-analysis. */
 public final class ReaGhidraAnalysisOptions extends HeadlessScript {
     @Override
     public void run() throws Exception {
         String[] arguments = getScriptArgs();
-        if (arguments.length != 1 || arguments[0].isBlank()) {
+        if (arguments.length != 2 || arguments[0].isBlank() || arguments[1].isBlank()) {
             throw new IllegalArgumentException(
-                "ReaGhidraAnalysisOptions requires one comma-separated analyzer-name argument");
+                "ReaGhidraAnalysisOptions requires an analyzer-mode argument followed by one comma-separated analyzer-name argument");
         }
-        String[] names = arguments[0].split(",");
+        String mode = arguments[0].trim();
+        if (!"disable".equals(mode) && !"enable".equals(mode)) {
+            throw new IllegalArgumentException("Unknown analyzer mode: " + mode);
+        }
+        String requestedState = "enable".equals(mode) ? "true" : "false";
+        String[] names = arguments[1].split(",");
         AutoAnalysisManager analysis = AutoAnalysisManager.getAnalysisManager(currentProgram);
         Map<String, String> options = getCurrentAnalysisOptionsAndValues(currentProgram);
         for (String requestedName : names) {
@@ -24,14 +29,16 @@ public final class ReaGhidraAnalysisOptions extends HeadlessScript {
         }
         for (String requestedName : names) {
             monitor.checkCancelled();
-            setAnalysisOption(currentProgram, requestedName.trim(), "false");
+            setAnalysisOption(currentProgram, requestedName.trim(), requestedState);
         }
         options = getCurrentAnalysisOptionsAndValues(currentProgram);
         for (String requestedName : names) {
             monitor.checkCancelled();
             String name = requestedName.trim();
-            if (!"false".equals(options.get(name))) {
-                throw new IllegalStateException("Ghidra analyzer remained enabled: " + name);
+            if (!requestedState.equals(options.get(name))) {
+                throw new IllegalStateException(
+                    ("enable".equals(mode) ? "Ghidra analyzer remained disabled: " : "Ghidra analyzer remained enabled: ")
+                        + name);
             }
         }
     }

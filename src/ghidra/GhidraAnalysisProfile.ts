@@ -62,6 +62,7 @@ export const resolveGhidraAnalysisProfile = async (
   signal?: AbortSignal,
   languageOverride?: GhidraLanguageOverride,
   disabledAnalyzers?: readonly string[],
+  enabledAnalyzers?: readonly string[],
 ): Promise<Result<AnalysisProfileResolution, AnalysisError>> => {
   if (signal?.aborted === true)
     return Promise.resolve(err(new AnalysisCancelledError("open_binary")));
@@ -96,12 +97,28 @@ export const resolveGhidraAnalysisProfile = async (
     : null;
   if (pspExtension !== null && !pspExtension.ok) return pspExtension;
   const provider = { ...identity, version: installation.providerVersion };
+  const presetSegments = [
+    ...(disabledAnalyzers === undefined || disabledAnalyzers.length === 0
+      ? []
+      : [`disabled:${disabledAnalyzers.join(",")}`]),
+    ...(enabledAnalyzers === undefined || enabledAnalyzers.length === 0
+      ? []
+      : [`enabled:${enabledAnalyzers.join(",")}`]),
+  ];
   const analyzerParameters =
-    disabledAnalyzers === undefined || disabledAnalyzers.length === 0
+    presetSegments.length === 0
       ? { analyzer_preset: "ghidra-default" }
       : {
-          analyzer_preset: `ghidra-default+disabled:${disabledAnalyzers.join(",")}`,
-          analysis_options: { disabled_analyzers: [...disabledAnalyzers] },
+          analyzer_preset: ["ghidra-default", ...presetSegments].join("+"),
+          analysis_options: {
+            ...(disabledAnalyzers === undefined ||
+            disabledAnalyzers.length === 0
+              ? {}
+              : { disabled_analyzers: [...disabledAnalyzers] }),
+            ...(enabledAnalyzers === undefined || enabledAnalyzers.length === 0
+              ? {}
+              : { enabled_analyzers: [...enabledAnalyzers] }),
+          },
         };
   if (target.format === "raw-binary") {
     if (languageOverride !== undefined)
@@ -347,6 +364,29 @@ export const ghidraProfileDisabledAnalyzers = (
 
 /** Whether a committed profile and the active configuration disable the same analyzers. */
 export const sameGhidraDisabledAnalyzers = (
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean =>
+  left === undefined || right === undefined
+    ? left === right
+    : left.length === right.length &&
+      left.every((name, index) => name === right[index]);
+
+/** Read the enabled-analyzer commitment back from a resolved profile. */
+export const ghidraProfileEnabledAnalyzers = (
+  parameters: Readonly<Record<string, unknown>>,
+): readonly string[] | undefined => {
+  const options = parameters.analysis_options;
+  if (typeof options !== "object" || options === null) return undefined;
+  const enabled = (options as Record<string, unknown>).enabled_analyzers;
+  if (!Array.isArray(enabled)) return undefined;
+  return enabled.every((name) => typeof name === "string")
+    ? (enabled as readonly string[])
+    : undefined;
+};
+
+/** Whether a committed profile and the active configuration enable the same analyzers. */
+export const sameGhidraEnabledAnalyzers = (
   left: readonly string[] | undefined,
   right: readonly string[] | undefined,
 ): boolean =>

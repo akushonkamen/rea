@@ -16,8 +16,10 @@ import {
 import {
   ghidraPinnedLanguage,
   ghidraProfileDisabledAnalyzers,
+  ghidraProfileEnabledAnalyzers,
   ghidraProfileLanguageOverride,
   sameGhidraDisabledAnalyzers,
+  sameGhidraEnabledAnalyzers,
   sameGhidraLanguageOverride,
 } from "./GhidraAnalysisProfile.js";
 import { ghidraPinnedMipsLanguage } from "./GhidraMipsProfile.js";
@@ -515,6 +517,20 @@ export const createGhidraProviderClient = (input: {
         },
       }),
     );
+  const enabledAnalyzers = ghidraProfileEnabledAnalyzers(
+    committedProfile.parameters,
+  );
+  if (
+    !sameGhidraEnabledAnalyzers(enabledAnalyzers, config.ghidraEnabledAnalyzers)
+  )
+    return unavailableClient(
+      new ProviderAdapterError("ghidra", "open_binary", {
+        diagnostics: {
+          reason:
+            "The committed analysis profile and REA_GHIDRA_ENABLED_ANALYZERS differ; reopen the target to resolve a new profile.",
+        },
+      }),
+    );
 
   const invalidProfile = validateGhidraExtensionProfile(
     extensions,
@@ -611,6 +627,9 @@ export const createGhidraProviderClient = (input: {
       ...(config.ghidraDisabledAnalyzers === undefined
         ? {}
         : { disabledAnalyzers: config.ghidraDisabledAnalyzers }),
+      ...(config.ghidraEnabledAnalyzers === undefined
+        ? {}
+        : { enabledAnalyzers: config.ghidraEnabledAnalyzers }),
       ...(seeds === undefined ? {} : { analysisSeeds: seeds }),
       platform: installation.platform,
       ...(extensions.length === 0 ? {} : { analysisExtensions: extensions }),
