@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { analyzeJavaScriptSemantics } from "./javascriptSemanticAnalysis.js";
+import { analyzeParsedJavaScriptSemantics } from "./javascriptSemanticAnalysis.js";
+import { parseJavaScriptSource } from "./javascriptSourceParser.js";
 import {
   origin,
   topLevelBinding,
@@ -291,4 +293,69 @@ it("preserves unshadowed require origins through aliases and assignments", () =>
       localName: null,
     }),
   ]);
+});
+
+describe("CommonJS wrapper var redeclarations", () => {
+  const analyzeRequireMode = (source: string) => {
+    const file = parseJavaScriptSource(source);
+    if (file === null) throw new Error("fixture failed to parse");
+    return analyzeParsedJavaScriptSemantics(file, "require");
+  };
+
+  it("retains wrapper bindings for uninitialized top-level var redeclarations", () => {
+    const ir = analyzeRequireMode(`
+      var module, exports, require;
+      const value = require("./dep.cjs");
+      exports.value = value;
+      module.exports.named = value;
+    `);
+    expect(
+      ir.moduleLinks.map(({ kind, specifier, localName, exportedName }) => ({
+        kind,
+        specifier,
+        localName,
+        exportedName,
+      })),
+    ).toEqual([
+      {
+        kind: "require",
+        specifier: "./dep.cjs",
+        localName: "value",
+        exportedName: null,
+      },
+      {
+        kind: "commonjs-export",
+        specifier: null,
+        localName: "value",
+        exportedName: "value",
+      },
+      {
+        kind: "commonjs-export",
+        specifier: null,
+        localName: "value",
+        exportedName: "named",
+      },
+    ]);
+    expect(ir.bindings.find(({ name }) => name === "require")).toBeUndefined();
+    expect(ir.bindings.find(({ name }) => name === "exports")).toBeUndefined();
+    expect(ir.bindings.find(({ name }) => name === "module")).toBeUndefined();
+  });
+
+  it("keeps initialized, lexical, and nested redeclarations shadowed", () => {
+    const ir = analyzeRequireMode(`
+      function nested() {
+        var exports;
+        exports.inner = 1;
+      }
+      var module = {};
+      let require = null;
+      module.exports = 1;
+    `);
+    expect(ir.bindings.find(({ name }) => name === "exports")).toBeDefined();
+    expect(ir.bindings.find(({ name }) => name === "module")).toBeDefined();
+    expect(ir.bindings.find(({ name }) => name === "require")).toBeDefined();
+    expect(
+      ir.moduleLinks.filter(({ kind }) => kind === "commonjs-export"),
+    ).toEqual([]);
+  });
 });

@@ -903,6 +903,27 @@ const bindOuterDeclaration = (
     });
 };
 
+/**
+ * Node wraps every CommonJS source in a function whose parameters own these
+ * names, and an uninitialized top-level `var` redeclaration neither writes nor
+ * replaces the wrapper value — it only re-announces it. Retaining the wrapper
+ * binding keeps the static require edge and the semantic export facts and
+ * require origins in agreement for such sources.
+ */
+const COMMONJS_WRAPPER_PARAMETERS = new Set(["exports", "require", "module"]);
+
+const retainsCommonJsWrapperBinding = (
+  node: t.VariableDeclarator,
+  parent: t.Node | null,
+  declarationScope: JavaScriptSemanticScopeState,
+  state: JavaScriptSemanticAnalysisState,
+): boolean =>
+  state.staticImportResolutionMode === "require" &&
+  declarationScope.kind === "program" &&
+  node.init === null &&
+  t.isIdentifier(node.id) &&
+  COMMONJS_WRAPPER_PARAMETERS.has(node.id.name);
+
 const bindInnerDeclaration = (
   node: t.Node,
   parent: t.Node | null,
@@ -912,18 +933,21 @@ const bindInnerDeclaration = (
   if (t.isImportDeclaration(node)) bindImports(node, scope, state);
   else if (t.isTSImportEqualsDeclaration(node))
     bindImportEquals(node, scope, state);
-  else if (t.isVariableDeclarator(node))
+  else if (t.isVariableDeclarator(node)) {
+    const declarationScope = semanticVariableScope(scope, parent, state);
+    if (retainsCommonJsWrapperBinding(node, parent, declarationScope, state))
+      return;
     bindPattern({
       pattern: node.id,
       initializer: node.init ?? null,
-      scope: semanticVariableScope(scope, parent, state),
+      scope: declarationScope,
       state,
       mutable:
         parent !== null && t.isVariableDeclaration(parent)
           ? parent.kind !== "const"
           : true,
     });
-  else if (t.isClassExpression(node) && t.isIdentifier(node.id))
+  } else if (t.isClassExpression(node) && t.isIdentifier(node.id))
     addBinding({
       state,
       scope,

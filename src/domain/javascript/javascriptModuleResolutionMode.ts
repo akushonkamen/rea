@@ -17,6 +17,7 @@ export const moduleResolutionModeForJavaScriptReference = (
   if (referenceKind === "dynamic-import") return "import";
   const extension = posix.extname(sourcePath).toLowerCase();
   if (extension === ".cts") return "require";
+  if (extension === ".cjs") return "require";
   if (extension === ".mts") return "import";
   if (extension === ".ts" || extension === ".tsx") return "compiler-dependent";
   return "import";
