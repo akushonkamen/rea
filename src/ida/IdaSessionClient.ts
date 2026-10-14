@@ -524,7 +524,12 @@ export class IdaSessionClient implements AnalysisClient {
           : modernTools;
     const missing = expected.filter((name) => !tools.has(name));
     if (missing.length > 0) {
-      const summary = `IDA MCP ${this.config.protocol === "native" ? "native attached" : this.config.mode} compatibility profile is missing tools: ${missing.join(", ")}. Native attached mode requires the native IDA MCP tool catalog; legacy attached mode requires the legacy 1.4 profile; headless mode requires the database supervisor profile. See docs/ida-provider.md.`;
+      // A supervisor built before upstream PR #495 reports the same 2.0.0
+      // version while lacking idb_close, so naming that build turns the
+      // mismatch into an actionable reinstall instead of a dead-end diff.
+      const closeRequirement =
+        this.config.mode === "headless" && missing.includes("idb_close");
+      const summary = `IDA MCP ${this.config.protocol === "native" ? "native attached" : this.config.mode} compatibility profile is missing tools: ${missing.join(", ")}. Native attached mode requires the native IDA MCP tool catalog; legacy attached mode requires the legacy 1.4 profile; headless mode requires the database supervisor profile${closeRequirement ? ", including the idb_close tool that upstream added in mrexodia/ida-pro-mcp#495" : ""}. See docs/ida-provider.md.`;
       // The caller cannot act on a profile mismatch it never sees, so the
       // missing names travel as adapter diagnostics rather than a bare message.
       throw new ProviderAdapterError("ida", "initialize", {
@@ -539,8 +544,15 @@ export class IdaSessionClient implements AnalysisClient {
                 ? "legacy-1.4"
                 : "database-supervisor",
           missing_tools: [...missing],
-          recovery:
-            "Install an IDA MCP build that serves the selected profile; see docs/ida-provider.md.",
+          ...(closeRequirement
+            ? {
+                upstream_requirement:
+                  "The database supervisor profile requires an upstream build including mrexodia/ida-pro-mcp#495, which added idb_close; some builds report version 2.0.0 without it.",
+              }
+            : {}),
+          recovery: closeRequirement
+            ? "Install an IDA MCP build that includes mrexodia/ida-pro-mcp#495; see docs/ida-provider.md."
+            : "Install an IDA MCP build that serves the selected profile; see docs/ida-provider.md.",
         },
       });
     }

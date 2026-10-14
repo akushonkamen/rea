@@ -805,6 +805,14 @@ describe("IDA compatibility profile mismatch", () => {
         mode: "headless",
         expected_profile: "database-supervisor",
         missing_tools: ["idb_close"],
+        // The fixture catalog is a pre-#495 supervisor: upstream 2.0.0 builds
+        // before that PR report the same version without idb_close, so the
+        // error must name the build instead of leaving a bare catalog diff.
+        upstream_requirement: expect.stringContaining(
+          "mrexodia/ida-pro-mcp#495",
+        ),
+        reason: expect.stringContaining("mrexodia/ida-pro-mcp#495"),
+        recovery: expect.stringContaining("mrexodia/ida-pro-mcp#495"),
       },
     });
   });
