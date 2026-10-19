@@ -6,7 +6,12 @@ import {
   semanticStaticPropertyName,
 } from "./javascript/javascriptAstValues.js";
 
-/** Pick the endpoint argument for common network-call patterns. */
+/**
+ * Look up a property by its semantic name on an object-expression AST and
+ * return the matching `t.ObjectProperty["value"]` node, or `undefined` when
+ * the object spreads, has an undecidable key, or the name is absent.
+ * Exact string-literal evaluation lives in {@link objectString}.
+ */
 
 export const objectValue = (
   object: t.ObjectExpression,
