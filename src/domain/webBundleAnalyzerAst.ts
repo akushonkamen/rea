@@ -2,8 +2,9 @@ import * as t from "@babel/types";
 
 import { sanitizeBrowserUrl } from "./browserObservation.js";
 import {
+  isNullishJavaScriptSyntax,
   readExactJavaScriptLiteral,
-  semanticStaticPropertyName,
+  staticObjectProperty,
 } from "./javascript/javascriptAstValues.js";
 
 /** Pick the endpoint argument for common network-call patterns. */
@@ -12,18 +13,10 @@ export const objectValue = (
   object: t.ObjectExpression,
   name: string,
 ): t.ObjectProperty["value"] | undefined => {
-  let value: t.ObjectProperty["value"] | undefined;
-  for (const property of object.properties) {
-    if (t.isSpreadElement(property)) {
-      value = undefined;
-      continue;
-    }
-    const key = semanticStaticPropertyName(property.key, property.computed);
-    if (key === "" && !t.isStringLiteral(property.key)) value = undefined;
-    else if (key === name)
-      value = t.isObjectProperty(property) ? property.value : undefined;
-  }
-  return value;
+  // Reuse the shared static-property owner so inline literal spreads resolve
+  // their exact keys while unresolved or dynamic spreads stay unknown.
+  const result = staticObjectProperty(object, name, isNullishJavaScriptSyntax);
+  return result.status === "explicit" ? result.property.value : undefined;
 };
 
 export const objectString = (
