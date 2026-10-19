@@ -30,6 +30,7 @@ import {
   spawnOwnedProviderProcess,
 } from "../process/ProviderProcess.js";
 import { cleanupOwnedProcessGroup } from "../process/ProcessOwnership.js";
+import { bindProcessOwnershipCleanupError } from "../process/ProcessOwnershipCleanupResolution.js";
 import {
   observeProcessStartIdentity,
   signalProcessWithStartIdentity,
@@ -1022,6 +1023,9 @@ const bindLldbCleanup = <Failure extends AnalysisError>(
         return lldbCleanupResources(owner);
       },
     });
+    const ownership = owner.supervisor?.launch.ownership;
+    if (ownership !== undefined)
+      bindProcessOwnershipCleanupError(ownership, failure);
   }
   return failure;
 };

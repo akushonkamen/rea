@@ -180,6 +180,14 @@ export abstract class AnalysisError extends Error {
     return this;
   }
 
+  /** Drop retained resource labels once their exact owner confirmed release. */
+  clearCleanupResources(): this {
+    if (this.cleanupIncomplete) return this;
+    if (this.#cleanupDependencies === undefined)
+      this.#ownedCleanupResources = [];
+    return this;
+  }
+
   /** Clear live cleanup status only after its owning resource confirms retry success. */
   resolveCleanup(): this {
     if (

@@ -13,6 +13,7 @@ import {
 import { launcherIdentityFailure } from "./ProcessOwnershipIdentity.js";
 import { descendantsOf, liveProcesses } from "./ProcessOwnershipProcessTree.js";
 import { readProcessRunTokens } from "./ProcessRunTokenObservations.js";
+import { resolveProcessOwnershipCleanup } from "./ProcessOwnershipCleanupResolution.js";
 import { compareUnicodeCodePoints } from "../domain/unicodeCodePointOrder.js";
 import { ProcessOwnershipEvidenceOwner } from "./ProcessOwnershipEvidence.js";
 
@@ -422,11 +423,13 @@ export const cleanupOwnedProcessGroup = async (
     }
     if (!verification.cleaned)
       return mergeUnverifiedObservations(verification, plan.unverified);
+    resolveProcessOwnershipCleanup(ownership);
     return mergeUnverifiedObservations({ cleaned: true, signaled }, [
       ...plan.unverified,
       ...(verification.unverified ?? []),
     ]);
   }
+  resolveProcessOwnershipCleanup(ownership);
   return {
     cleaned: true,
     signaled,
