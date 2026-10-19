@@ -51,6 +51,8 @@ export class NativeCommandFailure extends Error {
   readonly preparationFailure:
     | DarwinProcessOwnershipInspectionError
     | undefined;
+  /** Exact caller cancellation reason observed by the command owner, if any. */
+  readonly cancellation: { readonly reason: unknown } | undefined;
 
   constructor(
     readonly tool: string,
@@ -77,6 +79,7 @@ export class NativeCommandFailure extends Error {
             options?.cause instanceof OwnedCommandFailure
           ? options.cause.preparationFailure
           : undefined;
+    this.cancellation = options?.cancellation;
     this.detail = options?.detail ?? this.preparationFailure?.message ?? null;
   }
 }
@@ -89,6 +92,8 @@ export interface NativeCommandFailureOptions extends ErrorOptions {
   readonly cleanupFailures?: readonly NativeCommandCleanupFailure[];
   /** Host-side reason the command could not be supervised, such as a missing ownership helper compiler. */
   readonly detail?: string;
+  /** Producer-owned exact cancellation fact, distinct from any physical cause. */
+  readonly cancellation?: { readonly reason: unknown };
 }
 
 /** One failed cleanup attempt; the runner retains `owner` until it is verified stopped. */
@@ -368,13 +373,16 @@ export const resolveXcrunTool = async (
     return ok({ path, sha256: await hashFile(path, signal) });
   } catch (cause: unknown) {
     const capture = failureCapture(found.value, false);
-    if (signal?.aborted === true)
+    // Classify cancellation only when the caught error itself establishes that
+    // the signal aborted the operation; a late physical I/O error stays primary.
+    const cancellation = cancellationReasonEstablishedBy(cause);
+    if (cancellation !== undefined)
       return err(
         new NativeCommandFailure(
           tool,
           "cancelled",
           capture.exitCode,
-          { cause },
+          { cause: cancellation },
           capture,
         ),
       );
@@ -476,6 +484,9 @@ const captureProcess = async (
           capture?.exitCode ?? null,
           {
             cause,
+            ...(cause.cancellation === undefined
+              ? {}
+              : { cancellation: cause.cancellation }),
             ...(cause.cleanupOwner === undefined
               ? {}
               : { cleanupOwner: cause.cleanupOwner }),
@@ -531,3 +542,11 @@ const hashFile = (path: string, signal?: AbortSignal): Promise<string> =>
     stream.once("error", reject);
     stream.once("end", () => resolve(hash.digest("hex")));
   });
+
+/** Return the exact abort reason only when the error itself establishes cancellation. */
+const cancellationReasonEstablishedBy = (cause: unknown): unknown => {
+  if (!(cause instanceof Error)) return undefined;
+  const code = (cause as { code?: unknown }).code;
+  if (cause.name !== "AbortError" && code !== "ABORT_ERR") return undefined;
+  return cause.cause !== undefined ? cause.cause : cause;
+};

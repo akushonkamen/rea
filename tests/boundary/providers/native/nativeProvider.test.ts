@@ -953,6 +953,31 @@ describe("native dispatch metadata error results", () => {
   });
 });
 
+describe("native cancellation provenance", () => {
+  it("preserves the exact opaque caller reason on a cancelled owned command", async () => {
+    const runner = new XcrunCommandRunner({}, () =>
+      Promise.resolve(ok({ path: process.execPath, sha256: "a".repeat(64) })),
+    );
+    const client = new NativeMacOSProvider({}, runner, "darwin").createClient(
+      machoTarget("/fixture"),
+    );
+    const controller = new AbortController();
+    const callerReason = { opaque: "caller-reason" };
+    const pending = client.execute(
+      "list_architectures",
+      {},
+      { signal: controller.signal },
+    );
+    controller.abort(callerReason);
+
+    const result = await pending;
+
+    expect(!result.ok && result.error._tag).toBe("AnalysisCancelledError");
+    if (result.ok) return;
+    expect(result.error.cause).toBe(callerReason);
+  });
+});
+
 describe("native macOS provider failures and parsing", () => {
   it("classifies unavailable, malformed, command failure, and cancellation", async () => {
     const unavailable = new NativeMacOSProvider(

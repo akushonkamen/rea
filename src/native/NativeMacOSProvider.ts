@@ -1105,8 +1105,17 @@ const translateCommandFailure = (
       { ...errorOptions, userMessage: reason },
     );
   }
-  if (failure.reason === "cancelled")
-    return new AnalysisCancelledError(operation, errorOptions);
+  if (failure.reason === "cancelled") {
+    // Project the producer-owned exact cancellation reason when the command
+    // owner recorded one; otherwise keep the retained failure as the cause.
+    const cancellation =
+      failure.cancellation ??
+      (failure.cause === undefined ? undefined : { reason: failure.cause });
+    return new AnalysisCancelledError(operation, {
+      ...errorOptions,
+      ...(cancellation === undefined ? {} : { cause: cancellation.reason }),
+    });
+  }
   if (failure.reason === "timeout")
     return new AnalysisTimeoutError(
       operation,
