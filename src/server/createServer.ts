@@ -13,7 +13,10 @@ import { createPeResourcesService } from "../composition/binaryDiagnostics.js";
 import type { PeResourcesService } from "../application/binaryDiagnostics/PeResourcesService.js";
 import { registerPeResourcesTool } from "./registerPeResourcesTool.js";
 import type { EvmInterfaceService } from "../application/evm/EvmInterfaceService.js";
-import { evmInterfaceModule } from "../composition/evm.js";
+import {
+  evmInterfaceModule,
+  evmLimiterAvailability,
+} from "../composition/evm.js";
 import { registerEvmTools } from "./registerEvmTools.js";
 import type { SqliteDatabaseService } from "../application/sqlite/SqliteDatabaseService.js";
 import { createSqliteDatabaseService } from "../composition/sqlite.js";
@@ -237,15 +240,23 @@ const installSessionToolAvailability = (
     const fridaFailure =
       options.optionalProviderLoadFailures?.fridaInstrumentation ??
       fridaInstrumentation.availabilityFailure?.();
-    return fridaFailure === undefined
-      ? value
-      : {
-          ...value,
-          optionalProviderLoadFailures: {
-            ...value.optionalProviderLoadFailures,
-            fridaInstrumentation: fridaFailure,
-          },
-        };
+    const withFrida =
+      fridaFailure === undefined
+        ? value
+        : {
+            ...value,
+            optionalProviderLoadFailures: {
+              ...value.optionalProviderLoadFailures,
+              fridaInstrumentation: fridaFailure,
+            },
+          };
+    const limiterAvailability =
+      value.evmInterfaceEnabled === true
+        ? evmLimiterAvailability(environment)
+        : undefined;
+    return limiterAvailability === undefined
+      ? withFrida
+      : { ...withFrida, evmLimiterAvailability: limiterAvailability };
   };
   return {
     policy,

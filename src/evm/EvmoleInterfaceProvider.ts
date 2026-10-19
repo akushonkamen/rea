@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { access, readFile, stat, writeFile } from "node:fs/promises";
-import { constants } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   createAnalysisExecution,
   type ExecutionOptions,
+  type ProviderAvailability,
 } from "../application/AnalysisProvider.js";
 import type {
   EvmInterfaceExecution,
@@ -64,6 +65,57 @@ import {
 const OPERATION = "inspect_evm_interface";
 const HOST_REQUIREMENT =
   "Initial real-verified offline EVM interface profile supports Linux x64 only.";
+/** Default mandatory limiter shared by execution admission and discovery. */
+export const EVM_PRLIMIT_COMMAND_DEFAULT = "/usr/bin/prlimit";
+
+/** Filesystem surface of the discovery limiter probe, injectable for tests. */
+export type EvmLimiterProbeFileSystem = {
+  accessSync(path: string, mode: number): void;
+  statSync(path: string): { isFile(): boolean };
+};
+
+/**
+ * Observe the selected prlimit limiter without starting any process, using the
+ * same host gate, resolution order, and admission semantics as execution
+ * (#inspect's mandatory executable check). Returns undefined outside Linux x64
+ * so those hosts keep their own availability gate.
+ */
+export const evmLimiterAvailability = (
+  environment: Readonly<NodeJS.ProcessEnv>,
+  probes?: {
+    readonly platform?: NodeJS.Platform;
+    readonly arch?: string;
+    readonly fs?: EvmLimiterProbeFileSystem;
+  },
+): ProviderAvailability | undefined => {
+  const platform = probes?.platform ?? process.platform;
+  const arch = probes?.arch ?? process.arch;
+  if (platform !== "linux" || arch !== "x64") return undefined;
+  const limiter =
+    environment.REA_EVM_PRLIMIT_COMMAND ?? EVM_PRLIMIT_COMMAND_DEFAULT;
+  const fs: EvmLimiterProbeFileSystem = probes?.fs ?? { accessSync, statSync };
+  const diagnostics = { limiter_path: limiter, platform, arch };
+  try {
+    if (!isAbsolute(limiter))
+      throw new Error(
+        "REA_EVM_PRLIMIT_COMMAND must be an absolute executable path.",
+      );
+    fs.accessSync(limiter, constants.X_OK);
+    if (!fs.statSync(limiter).isFile())
+      throw new Error(
+        "Configured prlimit must be a regular executable file, not a directory.",
+      );
+    return { status: "available", code: null, reason: null, diagnostics };
+  } catch (cause: unknown) {
+    const reason = `Offline EVM interface inspection requires caller-supplied util-linux prlimit: ${limiter}; ${cause instanceof Error ? cause.message : String(cause)}`;
+    return {
+      status: "unavailable",
+      code: "executable_missing",
+      reason,
+      diagnostics,
+    };
+  }
+};
 const replySchema = z.discriminatedUnion("ok", [
   z.strictObject({
     ok: z.literal(true),
@@ -187,7 +239,7 @@ export class EvmoleInterfaceProvider implements EvmInterfacePort {
     let phase: "configuration" | "artifact-read" | "worker" = "configuration";
     let workerLimits: EvmWorkerLimits | undefined;
     const limiter =
-      this.environment.REA_EVM_PRLIMIT_COMMAND ?? "/usr/bin/prlimit";
+      this.environment.REA_EVM_PRLIMIT_COMMAND ?? EVM_PRLIMIT_COMMAND_DEFAULT;
     let result: Result<EvmInterfaceExecution, AnalysisError>;
     try {
       if (options?.signal?.aborted)

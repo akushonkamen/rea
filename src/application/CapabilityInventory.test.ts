@@ -144,6 +144,60 @@ describe("ADB and Apktool host availability", () => {
   });
 });
 
+describe("EVM interface discovery", () => {
+  it("reports the selected limiter prerequisite instead of unconditional availability", () => {
+    const reason =
+      "Offline EVM interface inspection requires caller-supplied util-linux prlimit: /usr/bin/prlimit; ENOENT";
+    const inventory = buildCapabilityInventory(status(), {
+      ...enabledPolicy,
+      evmInterfaceEnabled: true,
+      evmLimiterAvailability: {
+        status: "unavailable",
+        code: "executable_missing",
+        reason,
+        diagnostics: { limiter_path: "/usr/bin/prlimit" },
+      },
+    });
+    expect(
+      inventory.find(({ name }) => name === "inspect_evm_interface"),
+    ).toMatchObject({
+      available: false,
+      reason: "provider_missing",
+      remediation: reason,
+    });
+  });
+
+  it("keeps the operation available when the selected limiter probe passes", () => {
+    const inventory = buildCapabilityInventory(status(), {
+      ...enabledPolicy,
+      evmInterfaceEnabled: true,
+      evmLimiterAvailability: {
+        status: "available",
+        code: null,
+        reason: null,
+        diagnostics: {},
+      },
+    });
+    expect(
+      inventory.find(({ name }) => name === "inspect_evm_interface"),
+    ).toMatchObject({
+      available: true,
+      reason: "available",
+      remediation: null,
+    });
+  });
+
+  it("keeps legacy availability when no limiter probe was recorded", () => {
+    const inventory = buildCapabilityInventory(status(), {
+      ...enabledPolicy,
+      evmInterfaceEnabled: true,
+    });
+    expect(
+      inventory.find(({ name }) => name === "inspect_evm_interface"),
+    ).toMatchObject({ available: true, reason: "available" });
+  });
+});
+
 describe("capability failure reasons", () => {
   it("keeps an unavailable Android runtime distinct from a missing provider", () => {
     const inventory = buildCapabilityInventory(status(), {
