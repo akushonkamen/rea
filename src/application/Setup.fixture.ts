@@ -10,13 +10,24 @@ import type { SetupClient } from "./SupportedClients.js";
 import type { SetupHopperInstallResult } from "./SetupInstallFailure.js";
 import { err, ok, type Result } from "../domain/result.js";
 import { SetupSkillInstallError } from "./SetupSkill.js";
-import type { DoctorCheck, DoctorReport, DoctorScope } from "./Doctor.js";
+import type {
+  DoctorCheck,
+  DoctorProviderInspection,
+  DoctorReport,
+  DoctorScope,
+} from "./Doctor.js";
 import type { LinuxDistribution } from "./LinuxHopper.js";
 import { PRODUCT_IDENTITY, SDK_IDENTITY } from "../identity.js";
 import { CATALOG_IDENTITY } from "../catalogIdentity.js";
 import type { ClientRegistrationStatus } from "./ClientRegistrationStatus.js";
 import { setupRegistrationCommand } from "./SetupHost.js";
 import { CURRENT_ENTRYPOINT_PATH } from "../process/CurrentEntrypointPath.js";
+
+/** Project optional provider inspections into a doctor report fixture. */
+const providerInspectionsField = (
+  inspections: readonly DoctorProviderInspection[] | undefined,
+): { providerInspections?: readonly DoctorProviderInspection[] } =>
+  inspections === undefined ? {} : { providerInspections: inspections };
 
 /** Recording setup host for service-level planning and recovery tests. */
 export class FakeSetupHost implements SetupHost {
@@ -52,6 +63,7 @@ export class FakeSetupHost implements SetupHost {
   configuredCommands: Array<readonly string[]> = [];
   doctorHealthy: boolean | undefined;
   scopedDoctorHealthy: boolean | undefined;
+  providerInspections: readonly DoctorProviderInspection[] | undefined;
   linuxDemoRuntimeMissing = false;
   unsupportedHopperVersion = false;
   hopperLauncherConfigured = false;
@@ -213,28 +225,35 @@ export class FakeSetupHost implements SetupHost {
       scope_checks: checks,
       informational_checks: [],
       ...(this.hopper === undefined ? {} : { hopperPath: this.hopper }),
+      ...providerInspectionsField(this.providerInspections),
       checks,
-      identity: {
-        cli_package_version: PRODUCT_IDENTITY.packageVersion,
-        expected_skill_version: PRODUCT_IDENTITY.skillVersion,
-        sdk: SDK_IDENTITY,
-        catalog: CATALOG_IDENTITY,
-        live_server: {
-          state: "unknown",
-          remediation: "Inspect the running server.",
-        },
-        installations: { paths: [], state: "unknown" },
-        skill: {
-          installed_version: null,
-          installed_tool_count: null,
-          state: this.skill === "unchanged" ? "aligned" : "missing",
-          remediation: null,
-        },
-        registrations: this.productRegistrations,
-      },
+      identity: fixtureIdentity(this.skill, this.productRegistrations),
     });
   };
 }
+
+/** Project skill state and registrations into a doctor identity fixture. */
+const fixtureIdentity = (
+  skill: "installed" | "unchanged" | "failed",
+  registrations: readonly ClientRegistrationStatus[],
+): NonNullable<DoctorReport["identity"]> => ({
+  cli_package_version: PRODUCT_IDENTITY.packageVersion,
+  expected_skill_version: PRODUCT_IDENTITY.skillVersion,
+  sdk: SDK_IDENTITY,
+  catalog: CATALOG_IDENTITY,
+  live_server: {
+    state: "unknown",
+    remediation: "Inspect the running server.",
+  },
+  installations: { paths: [], state: "unknown" },
+  skill: {
+    installed_version: null,
+    installed_tool_count: null,
+    state: skill === "unchanged" ? "aligned" : "missing",
+    remediation: null,
+  },
+  registrations,
+});
 
 /** Build setup options for approved or planning-only service tests. */
 export const options = (

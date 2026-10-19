@@ -347,3 +347,85 @@ describe("setup scoped readiness", () => {
     });
   });
 });
+
+describe("setup provider readiness projection", () => {
+  it("does not advertise an available provider whose cache check failed", async () => {
+    const host = new FakeSetupHost();
+    host.hopper = "/Applications/Hopper";
+    host.clients = [{ name: "codex", configPath: "/codex.toml" }];
+    host.scopedDoctorHealthy = true;
+    host.providerInspections = [
+      {
+        id: "kuna",
+        configured: true,
+        available: true,
+        providerVersion: "1.2.3",
+        registrationEnvironment: { REA_KUNA_COMMAND: "/usr/local/bin/kuna" },
+        checks: [
+          {
+            name: "installation",
+            ok: true,
+            code: null,
+            detail: "/usr/local/bin/kuna reports Kuna 1.2.3.",
+            remediation: null,
+            classification: "config_drift",
+          },
+          {
+            name: "cache",
+            ok: false,
+            code: "open_options_invalid",
+            detail:
+              "The Kuna cache root /fixture/home/.cache/rea/kuna exists but is not a directory.",
+            remediation:
+              "Set REA_KUNA_CACHE_DIR to a directory REA may own, or remove the conflicting file.",
+            classification: "config_drift",
+          },
+        ],
+      },
+    ];
+
+    const result = await runSetup(options(true), host);
+
+    expect(result.status).toBe("ready");
+    expect(result.doctor.availableProviders).toEqual(["hopper"]);
+  });
+
+  it("still advertises an available provider whose cache check passes", async () => {
+    const host = new FakeSetupHost();
+    host.hopper = "/Applications/Hopper";
+    host.clients = [{ name: "codex", configPath: "/codex.toml" }];
+    host.scopedDoctorHealthy = true;
+    host.providerInspections = [
+      {
+        id: "kuna",
+        configured: true,
+        available: true,
+        providerVersion: "1.2.3",
+        registrationEnvironment: { REA_KUNA_COMMAND: "/usr/local/bin/kuna" },
+        checks: [
+          {
+            name: "installation",
+            ok: true,
+            code: null,
+            detail: "/usr/local/bin/kuna reports Kuna 1.2.3.",
+            remediation: null,
+            classification: "config_drift",
+          },
+          {
+            name: "cache",
+            ok: true,
+            code: null,
+            detail: "REA creates the Kuna project cache on first use.",
+            remediation: null,
+            classification: "config_drift",
+          },
+        ],
+      },
+    ];
+
+    const result = await runSetup(options(true), host);
+
+    expect(result.status).toBe("ready");
+    expect(result.doctor.availableProviders).toEqual(["hopper", "kuna"]);
+  });
+});
