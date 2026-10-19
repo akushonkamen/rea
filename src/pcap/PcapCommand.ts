@@ -184,11 +184,27 @@ export const runPcapCommand = async (options: {
           }
         : {}),
     };
+    // A known physical producer failure outlives a late caller abort observed
+    // during finalization; only a genuine cancellation projects as cancelled.
+    const physicalFailure =
+      cause instanceof OwnedCommandFailure && cause.reason === "process";
     if (
-      signal?.aborted ||
-      (cause instanceof OwnedCommandFailure && cause.reason === "cancelled")
+      !physicalFailure &&
+      (signal?.aborted ||
+        (cause instanceof OwnedCommandFailure &&
+          cause.cancellation !== undefined))
     )
-      throw new AnalysisCancelledError(operation, details);
+      throw new AnalysisCancelledError(operation, {
+        cause:
+          cause instanceof OwnedCommandFailure &&
+          cause.cancellation !== undefined
+            ? cause.cancellation.reason
+            : signal?.reason,
+        ...(details.capturedOutput === undefined
+          ? {}
+          : { capturedOutput: details.capturedOutput }),
+        ...(details.cleanup === undefined ? {} : { cleanup: details.cleanup }),
+      });
     if (
       cause instanceof OwnedCommandFailure &&
       cause.snapshot?.memoryLimitReached === true

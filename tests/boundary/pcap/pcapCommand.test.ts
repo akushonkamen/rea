@@ -1,5 +1,8 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, it, onTestFinished, vi } from "vitest";
+import { AnalysisProtocolError } from "../../../src/domain/analysisErrorCore.js";
+import { AnalysisCancelledError } from "../../../src/domain/analysisErrorCore.js";
+import { ProviderCleanupError } from "../../../src/domain/providerCleanupError.js";
 import { runPcapCommand } from "../../../src/pcap/PcapCommand.js";
 import * as ownership from "../../../src/process/ProcessOwnershipObservation.js";
 import { cleanupOwnedProcessGroup } from "../../../src/process/ProcessOwnership.js";
@@ -106,3 +109,95 @@ it("returns complete stdout while retaining unresolved process cleanup", async (
   mayClean = true;
   expect((await retained.owner.stop()).status).not.toBe("incomplete");
 });
+
+const captureProjection = async (run: () => Promise<unknown>): Promise<unknown> => {
+  try {
+    await run();
+  } catch (error: unknown) {
+    return error;
+  }
+  throw new Error("runPcapCommand resolved; expected a projected failure");
+};
+
+it("projects a physical producer failure even when the caller signal aborts during final cleanup", async () => {
+  const controller = new AbortController();
+  const error = await captureProjection(() =>
+    runPcapCommand({
+      operation: "inspect_pcap_capture",
+      command: process.execPath,
+      arguments: [
+        "-e",
+        'process.stderr.write("authored producer failure"); process.exitCode = 7',
+      ],
+      limits: { timeoutMs: 5000, maxOutputBytes: 1024 },
+      environment: {},
+      signal: controller.signal,
+      inputPath: "authored-producer-failure.cap",
+      launcher: async (spawn) => {
+        const launched = await spawnOwnedProviderProcess(spawn);
+        const cleanup =
+          launched.cleanup ??
+          (() => cleanupOwnedProcessGroup(launched.ownership));
+        return {
+          ...launched,
+          cleanup: async () => {
+            const outcome = await cleanup();
+            controller.abort(new Error("late caller abort"));
+            return outcome;
+          },
+        };
+      },
+      retain: (owner) => {
+        onTestFinished(async () => {
+          expect((await owner.stop()).status).not.toBe("incomplete");
+        });
+      },
+    }),
+  );
+  expect(error).toBeInstanceOf(AnalysisProtocolError);
+  expect((error as AnalysisProtocolError).message).toContain(
+    "authored producer failure",
+  );
+});
+
+it.each([
+  { label: "null reason", reason: null as unknown },
+  { label: "string reason", reason: "authored caller cancellation" },
+  {
+    label: "ProviderCleanupError reason",
+    reason: new ProviderCleanupError("authored-provider", ["authored-resource"], {
+      reason: "authored cleanup failure",
+    }),
+  },
+])(
+  "projects an active-child cancellation with the owner's exact $label",
+  async ({ reason }) => {
+    const controller = new AbortController();
+    const error = (await captureProjection(() =>
+      runPcapCommand({
+        operation: "inspect_pcap_capture",
+        command: process.execPath,
+        arguments: [
+          "-e",
+          'process.stdout.write("ready"); setInterval(() => {}, 1000)',
+        ],
+        limits: { timeoutMs: 5000, maxOutputBytes: 1024 },
+        environment: {},
+        signal: controller.signal,
+        inputPath: "authored-cancellation.cap",
+        launcher: async (spawn) => {
+          const launched = await spawnOwnedProviderProcess(spawn);
+          launched.process.stdout?.once("data", () => controller.abort(reason));
+          return launched;
+        },
+        retain: (owner) => {
+          onTestFinished(async () => {
+            expect((await owner.stop()).status).not.toBe("incomplete");
+          });
+        },
+      }),
+    )) as AnalysisCancelledError;
+    expect(error).toBeInstanceOf(AnalysisCancelledError);
+    expect(error.cause).toBe(reason);
+  },
+);
