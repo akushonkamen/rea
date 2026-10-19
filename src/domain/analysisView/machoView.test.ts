@@ -38,7 +38,13 @@ const report = {
     },
   ]),
   build_metadata: coverage([
-    { platform: "1", minimum_os: "14.0", sdk: "15.0", tools: [] },
+    {
+      platform: "1",
+      platform_code: 1,
+      minimum_os: "14.0",
+      sdk: "15.0",
+      tools: [],
+    },
   ]),
   load_commands: coverage([{ index: 0, kind: "LC_MAIN", fields: {} }]),
   dependencies: coverage([

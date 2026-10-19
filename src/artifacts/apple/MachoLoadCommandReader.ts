@@ -4,6 +4,7 @@ import type {
   MachoSlice,
 } from "../../domain/apple/dylibResolution.js";
 import { machoCpuSubtypeBase } from "../../domain/apple/machoCpuIdentity.js";
+import { machoPlatformName } from "../../domain/apple/machoPlatform.js";
 import {
   classifyFatContainerIdentity,
   readFatContainerHeader,
@@ -56,9 +57,10 @@ const CPU_TYPE_X86_64 = 0x01000007;
  * Legacy `LC_VERSION_MIN_*` commands predate explicit simulator platform
  * IDs. Per Apple's dyld rules the image CPU type distinguishes simulator
  * from device: Intel images are simulator, ARM images are device
- * (tvOS simulator applies to x86_64 only). `LC_BUILD_VERSION` platform
- * numbers are preserved verbatim; unknown future numbers stay unknown
- * downstream, never mapped to nearest.
+ * (tvOS simulator applies to x86_64 only). Resolved platform numbers are
+ * preserved verbatim in `platform_code`/`platforms` and named through the
+ * shared vocabulary; unknown future numbers stay unnamed, never mapped to
+ * nearest.
  */
 const legacyVersionMinPlatform = (
   command: number,
@@ -293,8 +295,15 @@ const readSlice = async (
       fatAlignmentExponent: fat?.alignmentExponent ?? null,
     });
     const distinctPlatforms = [...new Set(slice.platforms)];
-    slice.platform =
+    const platform =
       distinctPlatforms.length === 1 ? (distinctPlatforms[0] ?? null) : null;
+    slice.platform_code = platform;
+    // Known codes carry the shared SDK-style name; unknown future codes keep
+    // their decimal value visible instead of mapping to a neighbor.
+    slice.platform =
+      platform === null
+        ? null
+        : (machoPlatformName(platform) ?? String(platform));
     return slice;
   }
   throw new MachoFormatIssue(
@@ -337,6 +346,7 @@ const decodeCommands = (
     file_type: fileTypeName(header.fileType),
     file_type_code: header.fileType,
     platform: null,
+    platform_code: null,
     platforms: [],
     install_name: null,
     dependencies: [],

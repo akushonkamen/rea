@@ -36,24 +36,76 @@ const read = (bytes: Uint8Array) =>
 // is x86_64 only). A legacy simulator executable must not fail resolution
 // against a modern simulator dylib.
 it.each([
-  { command: LC.VERSION_MIN_IPHONEOS, cpu: CPU.i386, platform: 7 },
-  { command: LC.VERSION_MIN_IPHONEOS, cpu: CPU.x86_64, platform: 7 },
-  { command: LC.VERSION_MIN_IPHONEOS, cpu: CPU.arm64, platform: 2 },
-  { command: LC.VERSION_MIN_TVOS, cpu: CPU.x86_64, platform: 8 },
-  { command: LC.VERSION_MIN_TVOS, cpu: CPU.arm64, platform: 3 },
-  { command: LC.VERSION_MIN_WATCHOS, cpu: CPU.i386, platform: 9 },
-  { command: LC.VERSION_MIN_WATCHOS, cpu: CPU.arm64, platform: 4 },
-  { command: LC.VERSION_MIN_MACOSX, cpu: CPU.x86_64, platform: 1 },
+  {
+    command: LC.VERSION_MIN_IPHONEOS,
+    cpu: CPU.i386,
+    code: 7,
+    name: "IOSSIMULATOR",
+  },
+  {
+    command: LC.VERSION_MIN_IPHONEOS,
+    cpu: CPU.x86_64,
+    code: 7,
+    name: "IOSSIMULATOR",
+  },
+  { command: LC.VERSION_MIN_IPHONEOS, cpu: CPU.arm64, code: 2, name: "IOS" },
+  {
+    command: LC.VERSION_MIN_TVOS,
+    cpu: CPU.x86_64,
+    code: 8,
+    name: "TVOSSIMULATOR",
+  },
+  { command: LC.VERSION_MIN_TVOS, cpu: CPU.arm64, code: 3, name: "TVOS" },
+  {
+    command: LC.VERSION_MIN_WATCHOS,
+    cpu: CPU.i386,
+    code: 9,
+    name: "WATCHOSSIMULATOR",
+  },
+  { command: LC.VERSION_MIN_WATCHOS, cpu: CPU.arm64, code: 4, name: "WATCHOS" },
+  { command: LC.VERSION_MIN_MACOSX, cpu: CPU.x86_64, code: 1, name: "MACOS" },
 ] as const)(
-  "classifies legacy command $command on $cpu.type as platform $platform",
-  async ({ command, cpu, platform }) => {
+  "classifies legacy command $command on $cpu.type as platform $name",
+  async ({ command, cpu, code, name }) => {
     const facts = await read(
       machoImage({ cpu, commands: [versionMinCommand(command)] }),
     );
     if (facts.status !== "parsed") throw new Error(facts.status);
-    expect(facts.slices[0]).toMatchObject({ platform, platforms: [platform] });
+    expect(facts.slices[0]).toMatchObject({
+      platform: name,
+      platform_code: code,
+      platforms: [code],
+    });
   },
 );
+
+it("names LC_BUILD_VERSION platforms and keeps their raw codes", async () => {
+  for (const [code, name] of [
+    [1, "MACOS"],
+    [11, "VISIONOS"],
+    [12, "VISIONOSSIMULATOR"],
+  ] as const) {
+    const facts = await read(
+      machoImage({ commands: [buildVersionCommand(code)] }),
+    );
+    if (facts.status !== "parsed") throw new Error(facts.status);
+    expect(facts.slices[0]).toMatchObject({
+      platform: name,
+      platform_code: code,
+      platforms: [code],
+    });
+  }
+});
+
+it("keeps an unknown build platform as its decimal code", async () => {
+  const facts = await read(machoImage({ commands: [buildVersionCommand(99)] }));
+  if (facts.status !== "parsed") throw new Error(facts.status);
+  expect(facts.slices[0]).toMatchObject({
+    platform: "99",
+    platform_code: 99,
+    platforms: [99],
+  });
+});
 
 it("uses legacy simulator and device platform facts when resolving dylibs", async () => {
   const root = await createTestTempDirectory("rea-macho-legacy-platform-");
@@ -405,7 +457,8 @@ describe("Mach-O load command reader: reads and validates universal binary slice
       cpu_subtype: CPU.arm64.subtype,
       fat_cpu_type: null,
       fat_cpu_subtype: null,
-      platform: 7,
+      platform: "IOSSIMULATOR",
+      platform_code: 7,
     });
     const fat = fatImage([{ cpu: CPU.arm64, bytes: thin }]);
     const parsedFat = await read(fat);

@@ -202,8 +202,7 @@ export type BinaryTarget =
       readonly format: "raw-binary";
       readonly architecture: HeaderArchitecture | RawOnlyArchitecture;
       readonly availableArchitectures: readonly (
-        | HeaderArchitecture
-        | RawOnlyArchitecture
+        HeaderArchitecture | RawOnlyArchitecture
       )[];
       readonly entryPoint: string;
       readonly entryPointSource: string;
@@ -216,9 +215,7 @@ export type BinaryTarget =
       readonly peMachine?: number;
       /** Provider-neutral PE image role observed from COFF characteristics. */
       readonly executableRole:
-        | "application"
-        | "shared-library"
-        | "non-executable";
+        "application" | "shared-library" | "non-executable";
       /** Whether the PE declares a non-empty CLI header data-directory entry. */
       readonly managed: boolean;
       /** Referenced CodeView debug symbols from the PE debug directory, if present. */
@@ -240,8 +237,10 @@ export type BinaryTarget =
         readonly format: "plist" | "javascript" | "source-map";
       });
 
+/** The shared Mach-O format vocabulary: thin files and universal containers. */
+export const MACHO_IMAGE_FORMATS = ["mach-o", "mach-o-universal"] as const;
+export type MachoImageFormat = (typeof MACHO_IMAGE_FORMATS)[number];
+
 /** Whether an executable target contains a thin or universal Mach-O image. */
-export const isMachOFormat = (
-  format: unknown,
-): format is "mach-o" | "mach-o-universal" =>
-  format === "mach-o" || format === "mach-o-universal";
+export const isMachOFormat = (format: unknown): format is MachoImageFormat =>
+  MACHO_IMAGE_FORMATS.includes(format as MachoImageFormat);

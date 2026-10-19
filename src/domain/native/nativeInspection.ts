@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MACHO_IMAGE_FORMATS } from "../binaryTargetTypes.js";
 import { jsonValueSchema } from "../jsonValue.js";
 
 const hexAddress = z.string().regex(/^0x[a-fA-F0-9]+$/u);
@@ -92,13 +93,16 @@ const loadCommandSchema = z.object({
 });
 const buildMetadataSchema = z.object({
   platform: z.string().nullable(),
+  /** Raw LC_BUILD_VERSION platform number behind `platform`; null when unobserved. */
+  platform_code: z.number().int().nonnegative().nullable(),
   minimum_os: z.string().nullable(),
   sdk: z.string().nullable(),
   tools: z.array(z.object({ name: z.string(), version: z.string() })),
 });
 
 export const inspectMachoSchema = z.object({
-  format: z.literal("mach-o"),
+  /** Shared Mach-O vocabulary: thin files and universal fat containers. */
+  format: z.enum(MACHO_IMAGE_FORMATS),
   /** Exact lipo slice selected for inspection and its offset in the input container. */
   selected_architecture: z.object({
     name: z

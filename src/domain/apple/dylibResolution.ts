@@ -74,8 +74,13 @@ export const machoSliceSchema = z.strictObject({
   fat_alignment_exponent: z.number().int().nonnegative().nullable(),
   file_type: z.enum(["execute", "dylib", "bundle", "other"]),
   file_type_code: z.number().int().nonnegative(),
-  /** Raw LC_BUILD_VERSION platform number; null means no such command was observed. */
-  platform: z.number().int().nonnegative().nullable(),
+  /**
+   * Shared SDK-style name of the declared build platform; the decimal code
+   * text when the code is unknown, null when mixed or no such command.
+   */
+  platform: z.string().nullable(),
+  /** Raw LC_BUILD_VERSION platform number behind `platform`. */
+  platform_code: z.number().int().nonnegative().nullable(),
   /** Every distinct build platform declared by LC_BUILD_VERSION/version-min commands. */
   platforms: z.array(z.number().int().nonnegative()),
   install_name: z.string().nullable(),
@@ -684,6 +689,7 @@ const withoutDependencies = (
   file_type: slice.file_type,
   file_type_code: slice.file_type_code,
   platform: slice.platform,
+  platform_code: slice.platform_code,
   platforms: slice.platforms,
   install_name: slice.install_name,
   rpaths: slice.rpaths,

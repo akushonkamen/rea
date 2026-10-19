@@ -1,4 +1,7 @@
-import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
+import type {
+  BinaryTarget,
+  MachoImageFormat,
+} from "../domain/binaryTargetTypes.js";
 import type { EvidenceLocation } from "../domain/evidence.js";
 import type { AnalysisError } from "../domain/analysisErrorBase.js";
 import { AnalysisOutputError } from "../domain/analysisErrorCore.js";
@@ -40,6 +43,10 @@ interface NativeMachoInspectionContext {
 }
 
 const DISCOVERY_COMMANDS = [["lipo", ["-detailed_info"]]] as const;
+
+/** Project lipo's thin/fat framing onto the shared Mach-O format vocabulary. */
+const machoImageFormatName = (lipoFormat: "thin" | "fat"): MachoImageFormat =>
+  lipoFormat === "thin" ? "mach-o" : "mach-o-universal";
 
 // llvm-nm's default dyld-info pass fakes up symbols the symbol table lacks
 // from dyld metadata. It takes seconds on large apps (Keynote arm64: 5.8 s
@@ -183,6 +190,7 @@ export const inspectNativeMacho = async (
       name: selectedArchitectureName,
       container_file_offset: containerOffset ?? null,
     },
+    machoImageFormatName(format),
   );
   const result =
     containerOffset === undefined
@@ -214,6 +222,7 @@ const normalizeMacho = (
     readonly name: string | null;
     readonly container_file_offset: number | null;
   },
+  format: MachoImageFormat,
 ) => {
   const byTool = captureLookup(captures);
   const imports = parseDyldSymbols(
@@ -276,7 +285,7 @@ const normalizeMacho = (
       : []),
   ];
   return inspectMachoSchema.parse({
-    format: "mach-o",
+    format,
     selected_architecture: selectedArchitecture,
     endian: load.endian,
     word_size: load.wordSize,

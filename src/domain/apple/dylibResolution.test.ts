@@ -24,10 +24,14 @@ const slice = (overrides: Partial<MachoSlice> = {}): MachoSlice => ({
     { execute: 2, dylib: 6, bundle: 8, other: 1 }[
       overrides.file_type ?? "dylib"
     ],
-  platform: overrides.platform ?? 1,
+  platform: overrides.platform ?? "MACOS",
+  platform_code:
+    overrides.platform === null
+      ? null
+      : (overrides.platforms?.[0] ?? overrides.platform_code ?? 1),
   platforms:
     overrides.platforms ??
-    (overrides.platform === null ? [] : [overrides.platform ?? 1]),
+    (overrides.platform === null ? [] : [overrides.platform_code ?? 1]),
   install_name: null,
   dependencies: [],
   rpaths: [],
@@ -423,7 +427,9 @@ describe("dyld resolution outcomes: checking candidate format and compatibility"
         "Contents/MacOS/a/lib.dylib": parsed(
           slice({ file_type: "other", file_type_code: 1 }),
         ),
-        "Contents/MacOS/b/lib.dylib": parsed(slice({ platform: 7 })),
+        "Contents/MacOS/b/lib.dylib": parsed(
+          slice({ platform: "IOSSIMULATOR", platforms: [7] }),
+        ),
         "Contents/MacOS/c/lib.dylib": parsed(slice()),
       }),
       { roots: [MAIN] },
@@ -464,13 +470,13 @@ describe("dyld resolution outcomes: checking candidate format and compatibility"
     const catalystProcess = await traceDylibLoading(
       memoryView({
         [MAIN]: executable({
-          platform: 6,
+          platform: "MACCATALYST",
           platforms: [6],
           rpaths: ["@executable_path/catalyst"],
           dependencies: [dependency("@rpath/lib.dylib")],
         }),
         "Contents/MacOS/catalyst/lib.dylib": parsed(
-          slice({ platform: 1, platforms: [1] }),
+          slice({ platform: "MACOS", platforms: [1] }),
         ),
       }),
       { roots: [MAIN] },
@@ -485,7 +491,7 @@ describe("dyld resolution outcomes: checking candidate format and compatibility"
     const zipperedImage = await traceDylibLoading(
       memoryView({
         [MAIN]: executable({
-          platform: 1,
+          platform: "MACOS",
           platforms: [1],
           rpaths: ["@executable_path/zippered"],
           dependencies: [dependency("@rpath/lib.dylib")],

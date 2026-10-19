@@ -17,6 +17,7 @@ import type { NativeCommandCapture } from "./CommandRunner.js";
 import { inspectNativeMacho } from "./NativeMachoInspection.js";
 import {
   NativeFixtureRunner,
+  nativeFixture,
   nativeMachoTarget,
   withOtoolMachHeader,
 } from "../../tests/fixtures/nativeCommands.js";
@@ -311,5 +312,61 @@ describe("Mach-O slice command scheduling", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatchObject({ reason: "nm failed" });
+  });
+});
+
+describe("Mach-O format vocabulary and build platform names", () => {
+  const inspectWithRunner = async (runner: NativeFixtureRunner) =>
+    inspectNativeMacho({
+      target: nativeMachoTarget("/fixture/app"),
+      run: (tool, args) => runner.run(tool, args),
+      invocation: (capture) => ({
+        tool: capture.tool,
+        command: [capture.executable, ...capture.arguments],
+        tool_version: capture.toolVersion,
+        version_reason: capture.versionReason,
+        executable_sha256: capture.executableSha256,
+        exit: { code: capture.exitCode, signal: capture.signal },
+        stdout_bytes: capture.stdoutBytes,
+        stderr_bytes: capture.stderrBytes,
+      }),
+    });
+
+  it("reports a universal container as mach-o-universal", async () => {
+    // The default fixture's lipo capture is a fat header (lipo-fat.txt).
+    const result = await inspectWithRunner(new NativeFixtureRunner());
+    if (!result.ok) throw result.error;
+    expect(result.value.result).toMatchObject({ format: "mach-o-universal" });
+  });
+
+  it("reports a thin file as mach-o", async () => {
+    const runner = new NativeFixtureRunner({
+      lipo: await nativeFixture("lipo-thin.txt"),
+    });
+    const result = await inspectWithRunner(runner);
+    if (!result.ok) throw result.error;
+    expect(result.value.result).toMatchObject({ format: "mach-o" });
+  });
+
+  it("keeps the numeric build platform beside its decoded name", async () => {
+    const otool = withOtoolMachHeader(
+      [
+        "Load command 0",
+        "      cmd LC_BUILD_VERSION",
+        "  cmdsize 32",
+        " platform 7",
+        "    minos 26.2",
+        "      sdk 26.2",
+        "   ntools 0",
+      ].join("\n"),
+    );
+    const runner = new NativeFixtureRunner({ otool });
+    const result = await inspectWithRunner(runner);
+    if (!result.ok) throw result.error;
+    expect(result.value.result).toMatchObject({
+      build_metadata: {
+        items: [{ platform: "IOSSIMULATOR", platform_code: 7 }],
+      },
+    });
   });
 });

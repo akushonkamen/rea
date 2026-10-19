@@ -1,3 +1,5 @@
+import { MACHO_PLATFORM_NAMES } from "../../domain/apple/machoPlatform.js";
+
 interface ParsedSection {
   readonly segment: string;
   readonly name: string;
@@ -35,6 +37,8 @@ interface ParsedLoadCommands {
   readonly entrypoints: Array<{ file_offset: number }>;
   readonly builds: Array<{
     platform: string | null;
+    /** Numeric LC_BUILD_VERSION platform behind `platform`; null when unobserved. */
+    platform_code: number | null;
     minimum_os: string | null;
     sdk: string | null;
     tools: Array<{ name: string; version: string }>;
@@ -68,33 +72,11 @@ const EMPTY_VALUE_FIELDS = new Set(["options", "segname", "sectname"]);
  * numbers. Name the codes declared in the SDK's <mach-o/loader.h>, without
  * the PLATFORM_/TOOL_ prefix, so build metadata uses the same symbolic style
  * as LC_VERSION_MIN_* platforms. Unknown codes keep their printed value.
+ * Platform names come from the shared vocabulary every naming face uses.
  */
-const BUILD_PLATFORM_NAMES: ReadonlyMap<string, string> = new Map([
-  ["1", "MACOS"],
-  ["2", "IOS"],
-  ["3", "TVOS"],
-  ["4", "WATCHOS"],
-  ["5", "BRIDGEOS"],
-  ["6", "MACCATALYST"],
-  ["7", "IOSSIMULATOR"],
-  ["8", "TVOSSIMULATOR"],
-  ["9", "WATCHOSSIMULATOR"],
-  ["10", "DRIVERKIT"],
-  ["11", "VISIONOS"],
-  ["12", "VISIONOSSIMULATOR"],
-  ["13", "FIRMWARE"],
-  ["14", "SEPOS"],
-  ["15", "MACOS_EXCLAVECORE"],
-  ["16", "MACOS_EXCLAVEKIT"],
-  ["17", "IOS_EXCLAVECORE"],
-  ["18", "IOS_EXCLAVEKIT"],
-  ["19", "TVOS_EXCLAVECORE"],
-  ["20", "TVOS_EXCLAVEKIT"],
-  ["21", "WATCHOS_EXCLAVECORE"],
-  ["22", "WATCHOS_EXCLAVEKIT"],
-  ["23", "VISIONOS_EXCLAVECORE"],
-  ["24", "VISIONOS_EXCLAVEKIT"],
-]);
+const BUILD_PLATFORM_NAMES: ReadonlyMap<string, string> = new Map(
+  [...MACHO_PLATFORM_NAMES].map(([code, name]) => [String(code), name]),
+);
 const BUILD_TOOL_NAMES: ReadonlyMap<string, string> = new Map([
   ["1", "CLANG"],
   ["2", "SWIFT"],
@@ -387,6 +369,7 @@ const collectBuild = (
         BUILD_PLATFORM_NAMES,
         stringField(fields, "platform"),
       ),
+      platform_code: platformCode(fields.platform ?? null),
       minimum_os: stringField(fields, "minos"),
       sdk: stringField(fields, "sdk"),
       tools,
@@ -396,10 +379,20 @@ const collectBuild = (
   if (kind.startsWith("LC_VERSION_MIN_"))
     state.builds.push({
       platform: kind.slice("LC_VERSION_MIN_".length) || null,
+      platform_code: null,
       minimum_os: stringField(fields, "version"),
       sdk: stringField(fields, "sdk"),
       tools: [],
     });
+};
+
+/**
+ * The raw platform number otool printed, when it printed one. Symbolic
+ * `LC_VERSION_MIN_*` frames carry no code, so they stay null here.
+ */
+const platformCode = (value: string | number | null): number | null => {
+  const text = value === null ? null : String(value);
+  return text !== null && /^\d+$/u.test(text) ? Number(text) : null;
 };
 
 const collectDependency = (
