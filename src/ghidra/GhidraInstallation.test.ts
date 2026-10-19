@@ -1614,3 +1614,78 @@ it.each(["cancelled", "cleanup"] as const)(
     ).rejects.toBe(failure);
   },
 );
+
+describe("stable JAVA_HOME registration paths", () => {
+  const kegOnlyLayout = async (formula: string, version: string) => {
+    const root = await createTestTempDirectory("rea-ghidra-java-home-");
+    const cellarHome = join(
+      root,
+      "Cellar",
+      formula,
+      version,
+      "libexec",
+      "openjdk.jdk",
+      "Contents",
+      "Home",
+    );
+    await mkdir(join(cellarHome, "bin"), { recursive: true });
+    const optFormula = join(root, "opt", formula);
+    await mkdir(join(root, "opt"), { recursive: true });
+    await symlink(join(root, "Cellar", formula, version), optFormula);
+    return {
+      cellarHome,
+      optHome: join(optFormula, "libexec", "openjdk.jdk", "Contents", "Home"),
+    };
+  };
+
+  const inspectWithObservedJavaHome = async (
+    javaHome: string | undefined,
+    observedHome: string,
+  ) =>
+    (
+      await inspectGhidraInstallation(
+        {
+          resourceOwner: inspectionResources.owner,
+          environment: {},
+          installDir: INSTALL,
+          platform: "darwin",
+          architecture: "arm64",
+          ...(javaHome === undefined ? {} : { javaHome }),
+        },
+        host({
+          probeJava: () =>
+            javaProbeOk<GhidraJavaObservation>({
+              ...JAVA,
+              osArch: "aarch64",
+              osName: "Mac OS X",
+              home: observedHome,
+            }),
+        }),
+      )
+    ).javaHome;
+
+  it("keeps the caller's opt JAVA_HOME when the JVM reports its Cellar realpath", async () => {
+    const { cellarHome, optHome } = await kegOnlyLayout(
+      "openjdk@21",
+      "21.0.12.1",
+    );
+    expect(await inspectWithObservedJavaHome(optHome, cellarHome)).toBe(
+      optHome,
+    );
+  });
+
+  it("rewrites an observed Homebrew Cellar home to the stable opt path", async () => {
+    const { cellarHome, optHome } = await kegOnlyLayout(
+      "openjdk@21",
+      "21.0.12.1",
+    );
+    expect(await inspectWithObservedJavaHome(undefined, cellarHome)).toBe(
+      optHome,
+    );
+  });
+
+  it("keeps a non-Homebrew observed Java home unchanged", async () => {
+    const home = "/usr/lib/jvm/jdk-21";
+    expect(await inspectWithObservedJavaHome(undefined, home)).toBe(home);
+  });
+});

@@ -563,7 +563,13 @@ const installationCoordinates = async (
         ? undefined
         : ghidraApplicationProperties(properties),
     javaCommand,
-    java: javaProbe?.ok === true ? javaProbe.value : undefined,
+    java:
+      javaProbe?.ok === true
+        ? {
+            ...javaProbe.value,
+            home: stableJavaHome(options.javaHome, javaProbe.value.home),
+          }
+        : undefined,
     javaProbeFailure:
       javaProbe !== undefined &&
       !javaProbe.ok &&
@@ -571,6 +577,50 @@ const installationCoordinates = async (
         ? javaProbe.error
         : undefined,
   };
+};
+
+/** Compare paths by their resolved real location, tolerating missing targets. */
+const sameRealDirectory = (left: string, right: string): boolean => {
+  const real = (candidate: string): string => {
+    try {
+      return realpathSync(candidate);
+    } catch {
+      return candidate;
+    }
+  };
+  return real(left) === real(right);
+};
+
+/**
+ * Rewrite a Homebrew Cellar java home to the formula's stable `opt` path when
+ * both resolve to the same JDK. Cellar paths embed the JDK version and are
+ * removed by the next `brew upgrade` + cleanup, which would leave a registered
+ * JAVA_HOME dangling (see #5264).
+ */
+const homebrewOptJavaHome = (observed: string): string | undefined => {
+  const kegOnly =
+    /^(.+)\/Cellar\/([^/]+)\/[^/]+\/(.+)$/u.exec(observed) ?? undefined;
+  if (kegOnly === undefined) return undefined;
+  const [, prefix, formula, rest] = kegOnly;
+  const candidate = `${prefix}/opt/${formula}/${rest}`;
+  return sameRealDirectory(candidate, observed) ? candidate : undefined;
+};
+
+/**
+ * Pick a JAVA_HOME that survives JDK upgrades: the caller's spelling when it
+ * resolves to the observed JDK, otherwise the stable Homebrew `opt` path when
+ * the observed home is a versioned Cellar path.
+ */
+export const stableJavaHome = (
+  callerJavaHome: string | undefined,
+  observedHome: string,
+): string => {
+  if (
+    callerJavaHome !== undefined &&
+    sameRealDirectory(callerJavaHome, observedHome)
+  )
+    return callerJavaHome;
+  return homebrewOptJavaHome(observedHome) ?? observedHome;
 };
 
 const installationChecks = ({
